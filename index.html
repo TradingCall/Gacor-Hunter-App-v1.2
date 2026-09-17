@@ -835,47 +835,60 @@
         startEngine();
     }
 
-    async function initDashboard() {
-        let isAuthenticated = await checkAuth();
-        if(!isAuthenticated) return;
-        
-        await sleep(600); 
-        
+async function initDashboard() {
+        // 1. Loading UI Instan
+        document.getElementById('topIhsgDesc').innerText = "⚡ Sinkronisasi data pasar...";
+        document.getElementById("top10Grid").innerHTML = `<div class="radar-card"><div class="rc-ticker">⏳ Loading...</div></div>`;
+
+        // 2. Optimistic UI: Tampilkan Saldo/Kuota langsung dari memori HP (Biar user gak nunggu layar kosong)
+        let savedKuota = localStorage.getItem("gacor_kuota") || "0";
+        let savedSaldo = localStorage.getItem("gacor_saldo") || "0";
+        document.getElementById('uiKuota').innerText = savedKuota;
+        document.getElementById('uiSaldo').innerText = formatNumber(parseInt(savedSaldo));
+
+        // 3. Tarik SEMUA DATA HANYA DENGAN 1 KALI REQUEST! (Single Payload)
         try {
-            const outReq = await fetch(`${GOOGLE_PROXY_URL}?action=getMarketOutlook`);
-            const outRes = await outReq.json();
-            if (outRes.status === 'success' && outRes.data) {
-                document.getElementById('topIhsgLevel').innerText = formatNumber(outRes.data.level);
+            const res = await fetch(`${GOOGLE_PROXY_URL}?action=getDashboard`);
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                // Render IHSG Instan
+                document.getElementById('topIhsgLevel').innerText = formatNumber(data.outlook.level);
                 let trendEl = document.getElementById('topIhsgTrend');
-                trendEl.innerText = `${outRes.data.trend} Market`;
-                if (outRes.data.trend === "BULLISH") trendEl.style.color = 'var(--buy)'; else if (outRes.data.trend === "BEARISH") trendEl.style.color = 'var(--skip)'; else trendEl.style.color = 'var(--wait)'; 
-                document.getElementById('topIhsgDesc').innerText = outRes.data.summary;
-            }
-        } catch(e) {}
+                trendEl.innerText = `${data.outlook.trend} Market`;
+                if (data.outlook.trend === "BULLISH") trendEl.style.color = 'var(--buy)'; 
+                else if (data.outlook.trend === "BEARISH") trendEl.style.color = 'var(--skip)'; 
+                else trendEl.style.color = 'var(--wait)'; 
+                document.getElementById('topIhsgDesc').innerText = data.outlook.summary;
 
-        await sleep(600); 
-
-        const grid = document.getElementById("top10Grid");
-        try {
-            const req = await fetch(`${GOOGLE_PROXY_URL}?action=getTop10`);
-            const top10Res = await req.json();
-            if(top10Res.status === 'success' && top10Res.data && top10Res.data.length > 0) {
-                grid.innerHTML = top10Res.data.map(item => {
-                    let t = item.ticker.replace('.JK', '');
-                    return `
-                    <div class="radar-card" onclick="scanFromRadar('${item.ticker}')">
-                        <div class="rc-top">
-                            <div class="rc-logo">${t.substring(0,2)}</div>
-                            <div class="rc-info">
-                                <span class="rc-ticker">${t}</span>
-                                <span class="rc-score">${item.score}% ⭐</span>
+                // Render Radar Instan
+                const grid = document.getElementById("top10Grid");
+                if(data.top10 && data.top10.length > 0) {
+                    grid.innerHTML = data.top10.map(item => {
+                        let t = item.ticker.replace('.JK', '');
+                        return `
+                        <div class="radar-card" onclick="scanFromRadar('${item.ticker}')">
+                            <div class="rc-top">
+                                <div class="rc-logo">${t.substring(0,2)}</div>
+                                <div class="rc-info">
+                                    <span class="rc-ticker">${t}</span>
+                                    <span class="rc-score">${item.score}% ⭐</span>
+                                </div>
                             </div>
+                            <div class="rc-setup">🎯 ${item.setup.substring(0, 15)}</div>
                         </div>
-                        <div class="rc-setup">🎯 ${item.setup.substring(0, 15)}</div>
-                    </div>
-                `}).join('');
-            } else { grid.innerHTML = `<div class="radar-card"><div class="rc-ticker">Waiting API...</div></div>`; }
-        } catch(err) { grid.innerHTML = `<div class="radar-card"><div class="rc-ticker">Error Backend</div></div>`; }
+                    `}).join('');
+                } else { 
+                    grid.innerHTML = `<div class="radar-card"><div class="rc-ticker">Data Kosong.</div></div>`; 
+                }
+            }
+        } catch (error) {
+            document.getElementById('topIhsgDesc').innerText = "❌ Gagal koneksi ke server Google.";
+            document.getElementById("top10Grid").innerHTML = `<div class="radar-card"><div class="rc-ticker">Error Backend</div></div>`;
+        }
+        
+        // 4. Verifikasi Akun berjalan sembunyi-sembunyi di background (tanpa menahan UI)
+        checkAuth(); 
     }
 
     window.onload = function() {
